@@ -5,6 +5,7 @@
 
 #include <vk_types.h>
 #include <vk_descriptors.h>
+#include <vk_loader.h>
 
 struct DeletionQueue
 {
@@ -55,25 +56,25 @@ constexpr unsigned int FRAME_OVERLAP = 2;
 class VulkanEngine {
 public:
 
-	bool _isInitialized{ false };
-	int _frameNumber {0};
-	bool stop_rendering{ false };
-    VkExtent2D _windowExtent{ 1700 , 900 };
+    bool _isInitialized{ false };
+    int _frameNumber {0};
+    bool stop_rendering{ false };
+    VkExtent2D _windowExtent{ 400, 400 };
 
-	struct SDL_Window* _window{ nullptr };
+    struct SDL_Window* _window{ nullptr };
 
-	static VulkanEngine& Get();
+    static VulkanEngine& Get();
 
-	//initializes everything in the engine
-	void init();
+    //initializes everything in the engine
+    void init();
 
-	//shuts down the engine
-	void cleanup();
+    //shuts down the engine
+    void cleanup();
 
-	//draw loop
-	void draw();
+    //draw loop
+    void draw();
 
-	//run main loop
+    //run main loop
     void run();
 
     void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
@@ -104,7 +105,9 @@ public:
     VmaAllocator _allocator;
 
     AllocatedImage _drawImage;
+    AllocatedImage _depthImage;
     VkExtent2D _drawExtent;
+    float renderScale = 1.f;
 
     DescriptorAllocator globalDescriptorAllocator;
 
@@ -121,6 +124,14 @@ public:
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
 
+    VkPipelineLayout _meshPipelineLayout;
+    VkPipeline _meshPipeline;
+
+    std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+    bool resize_requested = false;
 private:
 
     void init_vulkan();
@@ -131,10 +142,19 @@ private:
     void init_pipelines();
     void init_background_pipelines();
     void init_imgui();
+    void init_mesh_pipeline();
+    void init_default_data();
 
     void create_swapchain(uint32_t width, uint32_t height);
     void destroy_swapchain();
+    void resize_swapchain();
+
+
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+
+    void destroy_buffer(const AllocatedBuffer& buffer);
 
     void draw_background(VkCommandBuffer cmd);
     void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+    void draw_geometry(VkCommandBuffer cmd);
 };
