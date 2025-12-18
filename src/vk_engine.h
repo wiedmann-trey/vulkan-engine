@@ -6,6 +6,15 @@
 #include <vk_types.h>
 #include <vk_descriptors.h>
 #include <vk_loader.h>
+#include <camera.h>
+
+struct EngineStats {
+    float frametime;
+    int triangle_count;
+    int drawcall_count;
+    float scene_update_time;
+    float mesh_draw_time;
+};
 
 struct RenderObject {
 	uint32_t indexCount;
@@ -13,13 +22,14 @@ struct RenderObject {
 	VkBuffer indexBuffer;
 
 	MaterialInstance* material;
-
+  Bounds bounds;
 	glm::mat4 transform;
 	VkDeviceAddress vertexBufferAddress;
 };
 
 struct DrawContext {
 	std::vector<RenderObject> OpaqueSurfaces;
+  std::vector<RenderObject> TransparentSurfaces;
 };
 
 struct MeshNode : public Node {
@@ -28,7 +38,6 @@ struct MeshNode : public Node {
 
 	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
 };
-
 
 struct GLTFMetallic_Roughness {
 	MaterialPipeline opaquePipeline;
@@ -220,7 +229,13 @@ public:
     DrawContext mainDrawContext;
     std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 
+    Camera mainCamera;
+    std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+    EngineStats stats;
+
     void update_scene();
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+    void destroy_buffer(const AllocatedBuffer& buffer);
 private:
 
     void init_vulkan();
@@ -237,11 +252,6 @@ private:
     void create_swapchain(uint32_t width, uint32_t height);
     void destroy_swapchain();
     void resize_swapchain();
-
-
-    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
-
-    void destroy_buffer(const AllocatedBuffer& buffer);
 
     void draw_background(VkCommandBuffer cmd);
     void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
