@@ -176,6 +176,17 @@ void PipelineBuilder::set_multisampling_none()
     _multisampling.alphaToOneEnable = VK_FALSE;
 }
 
+void PipelineBuilder::set_multisampling_4x()
+{
+    _multisampling.sampleShadingEnable = VK_FALSE;
+    _multisampling.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
+    _multisampling.minSampleShading = 1.0f;
+    _multisampling.pSampleMask = nullptr;
+    // no alpha to coverage either
+    _multisampling.alphaToCoverageEnable = VK_FALSE;
+    _multisampling.alphaToOneEnable = VK_FALSE;
+}
+
 void PipelineBuilder::disable_blending()
 {
     // default write mask

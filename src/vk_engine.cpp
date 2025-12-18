@@ -30,7 +30,7 @@ VulkanEngine* loadedEngine = nullptr;
 
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
 
-constexpr bool bUseValidationLayers = false;
+constexpr bool bUseValidationLayers = true;
 
 bool is_visible(const RenderObject& obj, const glm::mat4& viewproj) {
     std::array<glm::vec3, 8> corners {
@@ -124,8 +124,8 @@ void VulkanEngine::init()
 
 void VulkanEngine::init_pipelines()
 {
-    init_background_pipelines();
-    init_mesh_pipeline();
+    //init_background_pipelines();
+    //init_mesh_pipeline();
 
     metalRoughMaterial.build_pipelines(this);
 
@@ -326,8 +326,18 @@ void VulkanEngine::init_swapchain()
 
     //build a image-view for the draw image to use for rendering
     VkImageViewCreateInfo rview_info = vkinit::imageview_create_info(_drawImage.imageFormat, _drawImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
-
     VK_CHECK(vkCreateImageView(_device, &rview_info, nullptr, &_drawImage.imageView));
+
+    // msaa
+    _msaaImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+    _msaaImage.imageExtent = drawImageExtent;
+    VkImageCreateInfo msaa_info = vkinit::image_create_info(_msaaImage.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, drawImageExtent);
+    msaa_info.samples = VK_SAMPLE_COUNT_4_BIT;
+    
+    vmaCreateImage(_allocator, &msaa_info, &rimg_allocinfo, &_msaaImage.image, &_msaaImage.allocation, nullptr);
+    
+    VkImageViewCreateInfo msaa_view_info = vkinit::imageview_create_info(_msaaImage.imageFormat, _msaaImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+    VK_CHECK(vkCreateImageView(_device, &msaa_view_info, nullptr, &_msaaImage.imageView));
 
     _depthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
     _depthImage.imageExtent = drawImageExtent;
@@ -335,6 +345,7 @@ void VulkanEngine::init_swapchain()
     depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
     VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage.imageFormat, depthImageUsages, drawImageExtent);
+    dimg_info.samples = VK_SAMPLE_COUNT_4_BIT;
 
     //allocate and create the image
     vmaCreateImage(_allocator, &dimg_info, &rimg_allocinfo, &_depthImage.image, &_depthImage.allocation, nullptr);
@@ -348,6 +359,9 @@ void VulkanEngine::init_swapchain()
     _mainDeletionQueue.push_function([=, this]() {
         vkDestroyImageView(_device, _drawImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
+
+        vkDestroyImageView(_device, _msaaImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _msaaImage.image, _msaaImage.allocation);
 
         vkDestroyImageView(_device, _depthImage.imageView, nullptr);
 	      vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
@@ -428,7 +442,6 @@ void VulkanEngine::init_descriptors()
 
     writer.update_set(_device,_drawImageDescriptors);
 
-
     {
       DescriptorLayoutBuilder builder;
       builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -497,11 +510,6 @@ void VulkanEngine::cleanup()
             vkDestroySemaphore(_device ,_frames[i]._swapchainSemaphore, nullptr);
 
             _frames[i]._deletionQueue.flush();
-        }
-
-        for (auto& mesh : testMeshes) {
-          destroy_buffer(mesh->meshBuffers.indexBuffer);
-          destroy_buffer(mesh->meshBuffers.vertexBuffer);
         }
 
         _mainDeletionQueue.flush();
@@ -589,7 +597,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
       }
   });
 
-
 	//allocate a new uniform buffer for the scene data
 	AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
@@ -609,8 +616,14 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 	writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	writer.update_set(_device, globalDescriptor);
 
+  VkClearValue clearColor;
+  clearColor.color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+
 	//begin a render pass  connected to our draw image
-	VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_msaaImage.imageView, &clearColor, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+  colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+  colorAttachment.resolveImageView = _drawImage.imageView;
+  colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
 	VkRenderingInfo renderInfo = vkinit::rendering_info(_windowExtent, &colorAttachment, &depthAttachment);
@@ -948,7 +961,7 @@ void VulkanEngine::init_mesh_pipeline() {
 	//no backface culling
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
 	//no multisampling
-	pipelineBuilder.set_multisampling_none();
+	pipelineBuilder.set_multisampling_4x();
 	//no blending
 	pipelineBuilder.disable_blending();
 
@@ -1007,12 +1020,13 @@ void VulkanEngine::draw()
 
     // transition our main draw image into general layout so we can write into it
     // we will overwrite it all so we dont care about what was the older layout
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    // vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    draw_background(cmd);
+    // draw_background(cmd);
 
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    vkutil::transition_image(cmd, _msaaImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 	  draw_geometry(cmd);
 
@@ -1226,23 +1240,6 @@ void VulkanEngine::run()
         ImGui::Text("draws %i", stats.drawcall_count);
         ImGui::End();
 
-        if (ImGui::Begin("background")) {
-            ImGui::SliderFloat("Render Scale",&renderScale, 0.3f, 1.f);
-
-            ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
-
-            ImGui::Text("Selected effect: ", selected.name);
-
-            ImGui::SliderInt("Effect Index", &currentBackgroundEffect,0, backgroundEffects.size() - 1);
-
-            ImGui::InputFloat4("data1",(float*)& selected.data.data1);
-            ImGui::InputFloat4("data2",(float*)& selected.data.data2);
-            ImGui::InputFloat4("data3",(float*)& selected.data.data3);
-            ImGui::InputFloat4("data4",(float*)& selected.data.data4);
-
-        }
-        ImGui::End();
-
         ImGui::Render();
 
         //our draw function
@@ -1274,12 +1271,12 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 	matrixRange.size = sizeof(GPUDrawPushConstants);
 	matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-    DescriptorLayoutBuilder layoutBuilder;
-    layoutBuilder.add_binding(0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+  DescriptorLayoutBuilder layoutBuilder;
+  layoutBuilder.add_binding(0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+  layoutBuilder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	layoutBuilder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
-    materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+  materialLayout = layoutBuilder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout,
         materialLayout };
@@ -1303,7 +1300,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 	pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
 	pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-	pipelineBuilder.set_multisampling_none();
+	pipelineBuilder.set_multisampling_4x();
 	pipelineBuilder.disable_blending();
 	pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
 

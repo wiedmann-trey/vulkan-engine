@@ -35,6 +35,7 @@ public:
     void set_cull_mode(VkCullModeFlags cullMode, VkFrontFace frontFace);
 
     void set_multisampling_none();
+    void set_multisampling_4x();
 
     void disable_blending();
 

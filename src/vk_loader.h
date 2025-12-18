@@ -32,8 +32,6 @@ struct MeshAsset {
 //forward declaration
 class VulkanEngine;
 
-std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGltfMeshes(VulkanEngine* engine, std::filesystem::path filePath);
-
 struct LoadedGLTF : public IRenderable {
 
     // storage for all the data on a given glTF file

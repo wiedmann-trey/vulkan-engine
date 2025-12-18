@@ -131,7 +131,7 @@ public:
     bool _isInitialized{ false };
     int _frameNumber {0};
     bool stop_rendering{ false };
-    VkExtent2D _windowExtent{ 400, 400 };
+    VkExtent2D _windowExtent{800, 800 };
 
     struct SDL_Window* _window{ nullptr };
 
@@ -177,7 +177,9 @@ public:
     VmaAllocator _allocator;
 
     AllocatedImage _drawImage;
+    AllocatedImage _msaaImage;
     AllocatedImage _depthImage;
+
     VkExtent2D _drawExtent;
     float renderScale = 1.f;
 
@@ -199,14 +201,11 @@ public:
     VkPipelineLayout _meshPipelineLayout;
     VkPipeline _meshPipeline;
 
-    std::vector<std::shared_ptr<MeshAsset>> testMeshes;
-
     GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
     bool resize_requested = false;
 
     GPUSceneData sceneData;
-
     VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 
     AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
