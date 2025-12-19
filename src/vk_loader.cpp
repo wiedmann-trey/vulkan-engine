@@ -197,12 +197,20 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
     std::vector<std::shared_ptr<GLTFMaterial>> materials;
 
     // load all textures
+    size_t i = 0;
     for (fastgltf::Image& image : gltf.images) {
       std::optional<AllocatedImage> img = load_image(engine, gltf, image);
 
       if (img.has_value()) {
         images.push_back(*img);
-        file.images[image.name.c_str()] = *img;
+        
+        // Generate unique key for images with empty names
+        std::string key = image.name.c_str();
+        if (key.empty()) {
+            key = "image_" + std::to_string(i);
+        }
+        
+        file.images[key] = *img;
       }
       else {
         // we failed to load, so lets give the slot a default white texture to not
@@ -210,6 +218,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
         images.push_back(engine->_errorCheckerboardImage);
         std::cout << "gltf failed to load texture " << image.name << std::endl;
       }
+      i++;
     }
 
     // create buffer to hold the material data
@@ -217,11 +226,17 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     int data_index = 0;
     GLTFMetallic_Roughness::MaterialConstants* sceneMaterialConstants = (GLTFMetallic_Roughness::MaterialConstants*)file.materialDataBuffer.info.pMappedData;
-
+    
+    i = 0;
     for (fastgltf::Material& mat : gltf.materials) {
         std::shared_ptr<GLTFMaterial> newMat = std::make_shared<GLTFMaterial>();
         materials.push_back(newMat);
-        file.materials[mat.name.c_str()] = newMat;
+
+        std::string key = mat.name.c_str();
+        if (key.empty()) {
+            key = "material_" + std::to_string(i);
+        }
+        file.materials[key] = newMat;
 
         GLTFMetallic_Roughness::MaterialConstants constants;
         constants.colorFactors.x = mat.pbrData.baseColorFactor[0];
@@ -257,10 +272,20 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
             materialResources.colorImage = images[img];
             materialResources.colorSampler = file.samplers[sampler];
         }
+
+        if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+            size_t img = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
+            size_t sampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
+            
+            materialResources.metalRoughImage = images[img];
+            materialResources.metalRoughSampler = file.samplers[sampler];
+        }
+
         // build material
         newMat->data = engine->metalRoughMaterial.write_material(engine->_device, passType, materialResources, file.descriptorPool);
 
         data_index++;
+        i++;
     }
 
     // use the same vectors for all meshes so that the memory doesnt reallocate as
@@ -268,11 +293,16 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
     std::vector<uint32_t> indices;
     std::vector<Vertex> vertices;
 
+    i = 0;
     for (fastgltf::Mesh& mesh : gltf.meshes) {
         std::shared_ptr<MeshAsset> newmesh = std::make_shared<MeshAsset>();
         meshes.push_back(newmesh);
-        file.meshes[mesh.name.c_str()] = newmesh;
-        newmesh->name = mesh.name;
+        std::string key = mesh.name.c_str();
+        if (key.empty()) {
+            key = "mesh_" + std::to_string(i);
+        }
+        file.meshes[key] = newmesh;
+        newmesh->name = key;
 
         // clear the mesh arrays each mesh, we dont want to merge them by error
         indices.clear();
@@ -366,8 +396,10 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
         }
 
         newmesh->meshBuffers = engine->uploadMesh(indices, vertices);
+        i++;
     }
 
+    i = 0;
     // load all nodes and their meshes
     for (fastgltf::Node& node : gltf.nodes) {
         std::shared_ptr<Node> newNode;
@@ -381,7 +413,11 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
         }
 
         nodes.push_back(newNode);
-        file.nodes[node.name.c_str()];
+        std::string key = node.name.c_str();
+        if (key.empty()) {
+            key = "node_" + std::to_string(i);
+        }
+        file.nodes[key] = newNode;
 
         std::visit(fastgltf::visitor { [&](fastgltf::Node::TransformMatrix matrix) {
                                           memcpy(&newNode->localTransform, matrix.data(), sizeof(matrix));
@@ -400,6 +436,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine,std::st
                            newNode->localTransform = tm * rm * sm;
                        } },
             node.transform);
+        i++;
     }
 
     // run loop again to setup transform hierarchy
@@ -434,29 +471,37 @@ void LoadedGLTF::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
 
 void LoadedGLTF::clearAll()
 {
+  
     VkDevice dv = creator->_device;
 
     descriptorPool.destroy_pools(dv);
     creator->destroy_buffer(materialDataBuffer);
 
     for (auto& [k, v] : meshes) {
-
-		creator->destroy_buffer(v->meshBuffers.indexBuffer);
-		creator->destroy_buffer(v->meshBuffers.vertexBuffer);
+      creator->destroy_buffer(v->meshBuffers.indexBuffer);
+      creator->destroy_buffer(v->meshBuffers.vertexBuffer);
     }
 
     for (auto& [k, v] : images) {
-        
-        if (v.image == creator->_errorCheckerboardImage.image) {
-            //dont destroy the default images
-            continue;
-        }
-        creator->destroy_image(v);
+      if (v.image == creator->_errorCheckerboardImage.image ||
+          v.image == creator->_whiteImage.image ||
+          v.image == creator->_greyImage.image ||
+          v.image == creator->_blackImage.image) {
+          continue;
+      }
+      creator->destroy_image(v);
     }
 
-	for (auto& sampler : samplers) {
-		vkDestroySampler(dv, sampler, nullptr);
+    for (auto& sampler : samplers) {
+      vkDestroySampler(dv, sampler, nullptr);
     }
+
+    topNodes.clear();
+    nodes.clear();
+    meshes.clear();
+    materials.clear();
+    images.clear();
+    samplers.clear();
 }
 
 
