@@ -18,3 +18,4 @@ layout(set = 1, binding = 0) uniform GLTFMaterialData{
 layout(set = 1, binding = 1) uniform sampler2D colorTex;
 layout(set = 1, binding = 2) uniform sampler2D metalRoughTex;
 
+const float PI = 3.14159265359;

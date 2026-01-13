@@ -111,7 +111,10 @@ void VulkanEngine::init()
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
 
-    std::string structurePath = { "..\\assets\\Box.glb" };
+    sceneData.sunlightColor = glm::vec4(1.f,1.f,1.f,1.f);
+    sceneData.sunlightDirection = glm::vec4(0.f,.5f,1.f,1.f);
+
+    std::string structurePath = { "..\\assets\\MetalRoughSpheres.glb" };
     auto structureFile = loadGltf(this,structurePath);
 
     assert(structureFile.has_value());
@@ -1241,6 +1244,9 @@ void VulkanEngine::run()
         ImGui::Text("draws %i", stats.drawcall_count);
         ImGui::End();
 
+        ImGui::SliderFloat3("Sun Direction", &sceneData.sunlightDirection.x, -1.0f, 1.0f);
+        ImGui::SliderFloat3("Sun Color", &sceneData.sunlightColor.x, 0.f, 1.0f);
+
         ImGui::Render();
 
         //our draw function
@@ -1258,7 +1264,7 @@ void VulkanEngine::run()
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 {
 	VkShaderModule meshFragShader;
-	if (!vkutil::load_shader_module("../shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+	if (!vkutil::load_shader_module("../shaders/metallic_roughness.frag.spv", engine->_device, &meshFragShader)) {
 		fmt::println("Error when building the triangle fragment shader module");
 	}
 
@@ -1410,8 +1416,6 @@ void VulkanEngine::update_scene()
 
 	//some default lighting parameters
 	sceneData.ambientColor = glm::vec4(.1f);
-	sceneData.sunlightColor = glm::vec4(1.f);
-	sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
   
   auto end = std::chrono::system_clock::now();
 
