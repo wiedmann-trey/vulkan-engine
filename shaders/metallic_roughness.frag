@@ -53,6 +53,65 @@ vec3 BRDF(vec3 v, vec3 l, vec3 n, float roughness, vec3 f0, vec3 diffuseColor) {
     return Fr + Fd;
 }
 
+float sampleShadowMap(sampler2D shadowMap, vec2 uv, vec2 offset, float compareDepth, float bias) {
+    float pcfDepth = texture(shadowMap, uv + offset).r;
+    return compareDepth + bias < pcfDepth ? 1.0 : 0.0;
+}
+
+float pcfShadow(sampler2D shadowMap, vec2 shadowCoord, float currentDepth, float bias) {
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    float shadow = 0.0;
+    
+    for(int x = -1; x <= 1; ++x) {
+        for(int y = -1; y <= 1; ++y) {
+            shadow += sampleShadowMap(shadowMap, shadowCoord, 
+                vec2(x, y) * texelSize, currentDepth, bias);
+        }
+    }
+    
+    return shadow / 9.0;
+}
+
+float sampleShadowCascade(vec3 worldPos, vec3 normal) {
+    vec4 viewPos = sceneData.view * vec4(worldPos, 1.0);
+    float depthValue = abs(viewPos.z);
+    
+    int cascadeIndex = 3;
+    for (int i = 0; i < 3; i++) {
+        if (depthValue < sceneData.cascadeSplits[i]) {
+            cascadeIndex = i;
+            break;
+        }
+    }
+
+    vec4 shadowCoord = sceneData.shadowMatrices[cascadeIndex] * vec4(worldPos, 1.0);
+    shadowCoord.xyz /= shadowCoord.w;
+    shadowCoord.xy = shadowCoord.xy * 0.5 + 0.5;
+
+
+    if (shadowCoord.x < 0.0 || shadowCoord.x > 1.0 || 
+        shadowCoord.y < 0.0 || shadowCoord.y > 1.0
+        ) {
+        return 1.0;
+    }
+
+    float bias = max(0.005 * (1.0 - dot(normal, -normalize(sceneData.sunlightDirection.xyz))), 0.0005);
+    float currentDepth = shadowCoord.z;
+    bias = 0.0005f;
+    
+    float shadow;
+    if (cascadeIndex == 0) {
+        shadow = pcfShadow(shadowMap0, shadowCoord.xy, currentDepth, bias);
+    } else if (cascadeIndex == 1) {
+        shadow = pcfShadow(shadowMap1, shadowCoord.xy, currentDepth, bias);
+    } else if (cascadeIndex == 2) {
+        shadow = pcfShadow(shadowMap2, shadowCoord.xy, currentDepth, bias);
+    } else {
+        shadow = pcfShadow(shadowMap3, shadowCoord.xy, currentDepth, bias);
+    }
+    return 1.0 - shadow;
+}
+
 void main() 
 {
   vec3 camPos = inverse(sceneData.view)[3].xyz;
@@ -69,10 +128,11 @@ void main()
   roughness = clamp(roughness * roughness,  0.089f, 1.f);
 
   // eval brdf for all lights
-  vec3 color = vec3(0.f);
+  vec3 color = sceneData.ambientColor.xyz * baseColor;
   vec3 lightDir = -normalize(sceneData.sunlightDirection.xyz);
+  float shadowFactor = max(1-sceneData.sunlightDirection.w, sampleShadowCascade(inPosWorld, normal));
   float NoL = clamp(dot(normal, lightDir), 0.0, 1.0);
-  color += BRDF(viewDir, lightDir, normal, roughness, f0, diffuseColor) * sceneData.sunlightColor.xyz * NoL;
+  color += BRDF(viewDir, lightDir, normal, roughness, f0, diffuseColor) * sceneData.sunlightColor.xyz * sceneData.sunlightColor.w * shadowFactor * NoL;
 
-	outFragColor = vec4(color, alpha);
+  outFragColor = vec4(color, alpha);
 }

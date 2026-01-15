@@ -74,6 +74,20 @@ struct MaterialInstance {
     MaterialPass passType;
 };
 
+struct CascadeData {
+    glm::mat4 viewProjMatrix;
+    float splitDepth;
+    float _pad[3];
+};
+
+struct ShadowCascades {
+    static constexpr int CASCADE_COUNT = 4;
+    AllocatedImage shadowImages[CASCADE_COUNT];
+    VkSampler shadowSampler;
+    VkDescriptorSet shadowDescriptorSet;
+    CascadeData cascadeData[CASCADE_COUNT];
+};
+
 struct DrawContext;
 
 // base class for a renderable dynamic object

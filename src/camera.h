@@ -11,6 +11,9 @@ public:
     // horizontal rotation
     float yaw { 0.f };
 
+    float _moveSens {.05f};
+    float _rotateSens {.005f};
+
     glm::mat4 getViewMatrix();
     glm::mat4 getRotationMatrix();
 

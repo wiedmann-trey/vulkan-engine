@@ -112,6 +112,8 @@ struct GPUSceneData {
     glm::vec4 ambientColor;
     glm::vec4 sunlightDirection; // w for sun power
     glm::vec4 sunlightColor;
+    glm::mat4 shadowMatrices[4];  // One per cascade
+    glm::vec4 cascadeSplits;
 };
 
 struct ComputeEffect {
@@ -235,6 +237,14 @@ public:
     void update_scene();
     AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     void destroy_buffer(const AllocatedBuffer& buffer);
+
+    ShadowCascades _shadowCascades;
+    VkPipeline _shadowPipeline;
+    VkPipelineLayout _shadowPipelineLayout;
+
+    float _near, _far;
+    float _shadowRange;
+    bool _shadowsEnabled;
 private:
 
     void init_vulkan();
@@ -247,6 +257,11 @@ private:
     void init_imgui();
     void init_mesh_pipeline();
     void init_default_data();
+    void init_shadow_maps();
+    void init_shadow_pipeline();
+
+    void calculate_cascade_splits(float cameraNear, float cameraFar);
+    void calculate_cascade_matrices(const glm::mat4& cameraView, const glm::mat4& cameraProj);
 
     void create_swapchain(uint32_t width, uint32_t height);
     void destroy_swapchain();
@@ -255,6 +270,7 @@ private:
     void draw_background(VkCommandBuffer cmd);
     void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
     void draw_geometry(VkCommandBuffer cmd);
+    void draw_shadow_cascades(VkCommandBuffer cmd);
 };
 
 

@@ -137,11 +137,15 @@ void PipelineBuilder::set_shaders(VkShaderModule vertexShader, VkShaderModule fr
 {
     _shaderStages.clear();
 
-    _shaderStages.push_back(
-        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vertexShader));
+    if(vertexShader != VK_NULL_HANDLE) {
+      _shaderStages.push_back(
+          vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, vertexShader));
+    }
 
-    _shaderStages.push_back(
-        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader));
+    if(fragmentShader != VK_NULL_HANDLE) {
+      _shaderStages.push_back(
+          vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader));
+    }
 }
 
 void PipelineBuilder::set_input_topology(VkPrimitiveTopology topology)
